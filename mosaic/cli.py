@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from .geometry import make_layout
-from .match import match_cells
+from .match import MATCHERS, match_cells
 from .pool import build_pool
 from .render import load_source, render, sample_targets
 
@@ -44,9 +44,20 @@ def build_parser() -> argparse.ArgumentParser:
     osz.add_argument("--width", type=int, help="output width in pixels (height keeps aspect)")
 
     look = p.add_argument_group("matching / appearance")
-    look.add_argument("--no-repeat-radius", type=int, default=3,
-                      help="don't reuse an image within this many cells (0 = allow)")
-    look.add_argument("--candidates", type=int, default=50,
+    look.add_argument("--matcher", choices=MATCHERS, default="random",
+                      help="'random': shuffled visit order + random choice among near-equal "
+                           "colours (avoids repeating patterns in uniform areas); "
+                           "'greedy': reading order, always the closest colour")
+    look.add_argument("--min-distance", type=int, default=4, metavar="N",
+                      help="two uses of the same image are at least N cells apart "
+                           "(0 or 1 = no limit)")
+    look.add_argument("--tolerance", type=float, default=6.0, metavar="DE",
+                      help="random matcher: candidates within this CIELAB delta-E of the "
+                           "best match count as equally good (~2.3 is just noticeable)")
+    look.add_argument("--reuse-penalty", type=float, default=0.0, metavar="DE",
+                      help="delta-E added to an image's cost per prior use; spreads usage "
+                           "across the pool")
+    look.add_argument("--candidates", type=int, default=100,
                       help="best colour matches considered per cell")
     look.add_argument("--blend", type=float, default=0.0,
                       help="0..1: shift each tile's colour toward the source colour")
@@ -56,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     perf = p.add_argument_group("pool / performance")
     perf.add_argument("--max-pool", type=int, help="use a random subset of N corpus images")
-    perf.add_argument("--seed", type=int, default=42, help="seed for --max-pool subsetting")
+    perf.add_argument("--seed", type=int, default=42, help="seed for --max-pool subsetting and the random matcher")
     perf.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
     perf.add_argument("--cache-dir", default=".mosaic_cache",
                       help="where to cache corpus colour features")
@@ -112,10 +123,15 @@ def main(argv=None) -> int:
 
     print("Matching ...")
     assignment, fallbacks = match_cells(layout, target_lab, pool.features,
-                                        no_repeat_radius=args.no_repeat_radius,
-                                        candidates=args.candidates)
-    print(f"  {len(np.unique(assignment))} distinct images used"
-          + (f"; {fallbacks} cells had to repeat a nearby image" if fallbacks else ""))
+                                        matcher=args.matcher, min_distance=args.min_distance,
+                                        tolerance=args.tolerance,
+                                        reuse_penalty=args.reuse_penalty,
+                                        candidates=args.candidates, seed=args.seed)
+    counts = np.bincount(assignment)
+    print(f"  {args.matcher} matcher: {np.count_nonzero(counts)} distinct images, "
+          f"most-used image appears {counts.max()}x"
+          + (f"; {fallbacks} cells broke --min-distance (raise --candidates)"
+             if fallbacks else ""))
 
     print("Rendering ...")
     canvas = render(layout, assignment, pool.paths, target_rgb,

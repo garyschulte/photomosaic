@@ -6,7 +6,7 @@ from PIL import Image
 
 from mosaic.color import srgb_to_lab
 from mosaic.geometry import HexLayout, RectLayout, make_layout
-from mosaic.match import match_cells
+from mosaic.match import match_cells, repetition_score
 from mosaic.pool import build_pool
 from mosaic.render import render, sample_targets
 from mosaic import cli
@@ -59,19 +59,54 @@ def test_lab_reference_values():
     np.testing.assert_allclose(srgb_to_lab([1, 0, 0]), [53.24, 80.09, 67.20], atol=0.05)
 
 
+@pytest.mark.parametrize("matcher", ["greedy", "random"])
 @pytest.mark.parametrize("shape", ["hex", "square"])
-def test_match_respects_no_repeat_radius(shape):
+def test_match_respects_min_distance(shape, matcher):
     lay = make_layout(shape, 400, 300, cols=12)
     rng = np.random.default_rng(1)
     targets = np.zeros((len(lay), 3))  # every cell wants the same colour
     pool = rng.normal(0, 5, (200, 3))
-    assigned, fallbacks = match_cells(lay, targets, pool, no_repeat_radius=2, candidates=200)
+    assigned, fallbacks = match_cells(lay, targets, pool, min_distance=3, candidates=200,
+                                      matcher=matcher, tolerance=50)
     assert fallbacks == 0
     for i, (q, r) in enumerate(lay.coords.tolist()):
-        for dq, dr in lay.neighbor_offsets(2):
+        for dq, dr in lay.neighbor_offsets(2):  # min_distance 3 => nothing within 2
             j = lay.index_of((q + dq, r + dr))
             if j is not None:
                 assert assigned[i] != assigned[j]
+
+
+def test_greedy_with_no_constraint_picks_best():
+    lay = make_layout("hex", 200, 200, cols=5)
+    targets = np.zeros((len(lay), 3))
+    pool = np.array([[9.0, 0, 0], [1.0, 0, 0], [5.0, 0, 0]])
+    assigned, _ = match_cells(lay, targets, pool, min_distance=0, matcher="greedy")
+    assert (assigned == 1).all()
+
+
+@pytest.mark.parametrize("shape", ["hex", "square"])
+def test_random_matcher_breaks_up_patterns(shape):
+    """Uniform source + many similar pool images: greedy tiles a periodic
+    lattice; random should not."""
+    lay = make_layout(shape, 1200, 900, cols=40)
+    rng = np.random.default_rng(2)
+    pool = rng.normal(0, 2, (300, 3))       # 300 nearly identical images
+    targets = np.zeros((len(lay), 3))
+    greedy, _ = match_cells(lay, targets, pool, matcher="greedy", min_distance=4)
+    rand, _ = match_cells(lay, targets, pool, matcher="random", min_distance=4, tolerance=10)
+    assert repetition_score(lay, greedy) > 0.5
+    assert repetition_score(lay, rand) < 0.1
+
+
+def test_reuse_penalty_spreads_usage():
+    lay = make_layout("hex", 600, 600, cols=20)
+    targets = np.zeros((len(lay), 3))
+    pool = np.array([[0.0, 0, 0]] + [[8.0 + i * 0.01, 0, 0] for i in range(50)])
+    plain, _ = match_cells(lay, targets, pool, matcher="greedy", min_distance=0)
+    spread, _ = match_cells(lay, targets, pool, matcher="greedy", min_distance=0,
+                            reuse_penalty=1.0)
+    assert np.bincount(plain).max() == len(lay)
+    assert np.bincount(spread).max() < len(lay) / 5
 
 
 @pytest.fixture
@@ -95,7 +130,7 @@ def test_end_to_end(tmp_path, solid_corpus, shape):
     Image.fromarray(src).save(tmp_path / "src.png")
     out = tmp_path / "out.png"
     rc = cli.main(["-s", str(tmp_path / "src.png"), "-c", str(solid_corpus), "-o", str(out),
-                   "--shape", shape, "--cols", "8", "--scale", "2", "--no-repeat-radius", "0",
+                   "--shape", shape, "--cols", "8", "--scale", "2", "--min-distance", "0",
                    "--cache-dir", str(tmp_path / "cache")])
     assert rc == 0
     img = np.asarray(Image.open(out))
