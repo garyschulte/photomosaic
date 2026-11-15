@@ -3,3 +3,5 @@ corpus/*
 .venv/*
 *.jpg
 *.png
+.mosaic_cache/
+__pycache__/
