@@ -1,10 +1,16 @@
 # Description
 
-Photo mosaic tool which will use an image corpus to create the mosaic tiles.  A picture is worth a thousand words so:
+Photo mosaic tool which will use an image corpus to create the mosaic tiles.  A picture is worth a thousand words so check out Linus the dog as an example.  Zoom in on the photos to see the mosaic tiles.  These were generated with :
+```
+ python3 ./create_mosaic.py -s example.jpg -c ./corpus --shape hex -o example_big.png --tile-size 70 --min-distance 7 --scale 2
+
+ python3 ./create_mosaic.py -s example.jpg -c ./corpus --shape hex -o example.png --tile-size 40 --min-distance 7 --scale 2
+ ```
 
 | Original | Big Tiles | Smaller Tiles |
 | ---------- | ---------- | ---------- | 
 | ![example.png](example.jpg) | ![example_big.png](example.png) | ![example.png](example.png) | 
+
 
 ## Usage
 
