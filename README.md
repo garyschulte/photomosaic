@@ -3,10 +3,24 @@
 Photo mosaic tool which will use an image corpus to create the mosaic tiles.  A picture is worth a thousand words so check out Linus the dog as an example.  Click on and zoom in on the photos to see the mosaic tiles, they are scaled up 2x 5076 x 3392.  These were generated with :
 ```
 # for the blockier tiles:
- python3 ./create_mosaic.py -s example.jpg -c ./corpus --shape hex -o example_big.png --tile-size 70 --min-distance 7 --scale 2
+ python3 ./create_mosaic.py \
+   -s example.jpg \
+   -c ./corpus \
+   --shape hex \
+   -o example_big.png \
+   --tile-size 70 \
+   --min-distance 7 \
+   --scale 2
 
 # for the finer tiles:
- python3 ./create_mosaic.py -s example.jpg -c ./corpus --shape hex -o example.png --tile-size 40 --min-distance 7 --scale 2
+ python3 ./create_mosaic.py \
+ -s example.jpg \
+ -c ./corpus \
+ --shape hex \
+-o example.png \
+--tile-size 40 \
+--min-distance 7 \
+--scale 2
 
  ```
 
